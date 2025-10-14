@@ -1,10 +1,19 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'ytb.dart';
+import 'package:bot_toast/bot_toast.dart';
+import 'ytb.dart'; 
 
 void main() {
-  runApp(const MyApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(
+    CupertinoApp(
+      builder: BotToastInit(),
+      navigatorObservers: [BotToastNavigatorObserver()],
+      debugShowCheckedModeBanner: false,
+      home: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatefulWidget {
@@ -39,8 +48,8 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return CupertinoApp(
-      debugShowCheckedModeBanner: false, // removed debug banner
-      title: 'mp3 Downloader for YouTube',
+      debugShowCheckedModeBanner: false,
+      title: 'MP3 Downloader for YouTube',
       theme: CupertinoThemeData(
         brightness: _darkMode ? Brightness.dark : Brightness.light,
         primaryColor: CupertinoColors.activeBlue,
@@ -76,111 +85,44 @@ class YtbDownloader extends StatefulWidget {
   State<YtbDownloader> createState() => _YtbDownloaderState();
 }
 
-class _YtbDownloaderState extends State<YtbDownloader>
-    with SingleTickerProviderStateMixin {
+class _YtbDownloaderState extends State<YtbDownloader> {
   final TextEditingController _urlController = TextEditingController();
-  String? _savedUrl;
-  String? _title;
-  String? _author;
-  String? _duration;
-  String? _thumbnail;
-  bool _loading = false;
-  double _progress = 0.0; // simple rolling percentage
-
-  late AnimationController _animController;
-  late Animation<double> _fadeAnim;
-  late Animation<double> _scaleAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    );
-    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeIn);
-    _scaleAnim = Tween<double>(
-      begin: 0.95,
-      end: 1,
-    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
-  }
+  final List<DownloadCard> _downloads = [];
+  bool _fetching = false;
 
   Future<void> _fetchInfo() async {
-    setState(() => _loading = true);
+    if (_urlController.text.trim().isEmpty) return;
+    setState(() => _fetching = true);
     try {
       final info = await fetchVideoInfo(_urlController.text.trim());
-      setState(() {
-        _title = info.title;
-        _author = info.author;
-        _duration = info.duration;
-        _thumbnail = info.thumbnail;
-        _savedUrl = _urlController.text.trim();
-      });
-      _animController.forward(from: 0);
+      final card = DownloadCard(
+        url: _urlController.text.trim(),
+        title: info.title,
+        author: info.author,
+        duration: info.duration ?? "Unknown",
+        thumbnail: info.thumbnail,
+        darkMode: widget.darkMode,
+      );
+      setState(() => _downloads.insert(0, card));
+
+      BotToast.showSimpleNotification(
+        title: "Download ready",
+        subTitle: info.title,
+        backgroundColor: CupertinoColors.activeGreen,
+        duration: const Duration(seconds: 3),
+      );
+
+      _urlController.clear();
     } catch (e) {
-      _showAlert("Error fetching info", e.toString());
+      BotToast.showSimpleNotification(
+        title: "Error fetching info",
+        subTitle: e.toString(),
+        backgroundColor: CupertinoColors.destructiveRed,
+        duration: const Duration(seconds: 3),
+      );
     } finally {
-      setState(() => _loading = false);
+      setState(() => _fetching = false);
     }
-  }
-
-  String _sanitizeFilename(String name) {
-    return name.replaceAll(RegExp(r'[\\/:*?"<>|$]'), '_');
-  }
-
-  Future<void> _download() async {
-    if (_savedUrl == null) return;
-
-    setState(() {
-      _loading = true;
-      _progress = 0.0;
-    });
-
-    try {
-      final downloadsPath = '/storage/emulated/0/Download';
-      final safeTitle = _sanitizeFilename("${_title ?? "audio"}.mp3");
-      final fullPath = '$downloadsPath/$safeTitle';
-
-      // Simple rolling animation while downloading
-      const duration = Duration(milliseconds: 100);
-      Future.doWhile(() async {
-        await Future.delayed(duration);
-        setState(() {
-          _progress += 0.02;
-          if (_progress > 0.95) _progress = 0.95; // cap before done
-        });
-        return _loading; // continue while downloading
-      });
-
-      await downloadYoutubeAudio(_savedUrl!, fullPath); // your backend function
-
-      setState(() => _progress = 1.0); // finished
-      _showAlert("Download complete", "Saved to: $fullPath");
-    } catch (e) {
-      _showAlert("Download failed", e.toString());
-    } finally {
-      setState(() {
-        _loading = false;
-        _progress = 0.0;
-      });
-    }
-  }
-
-  void _showAlert(String title, String msg) {
-    showCupertinoDialog(
-      context: context,
-      builder:
-          (_) => CupertinoAlertDialog(
-            title: Text(title),
-            content: Text(msg),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text("OK"),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-    );
   }
 
   @override
@@ -188,7 +130,7 @@ class _YtbDownloaderState extends State<YtbDownloader>
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text(
-          "YouTube download (MP3)",
+          "YouTube MP3 Downloader",
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         trailing: CupertinoSwitch(
@@ -198,138 +140,201 @@ class _YtbDownloaderState extends State<YtbDownloader>
         ),
       ),
       child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              CupertinoTextField(
-                controller: _urlController,
-                placeholder: "Enter YouTube URL",
-                padding: const EdgeInsets.all(16),
-                clearButtonMode: OverlayVisibilityMode.editing,
-              ),
-              const SizedBox(height: 16),
-              CupertinoButton.filled(
-                onPressed: _loading ? null : _fetchInfo,
-                child:
-                    _loading
-                        ? const CupertinoActivityIndicator()
-                        : const Text("Fetch Video Info"),
-              ),
-              const SizedBox(height: 24),
-              if (_title != null)
-                FadeTransition(
-                  opacity: _fadeAnim,
-                  child: ScaleTransition(
-                    scale: _scaleAnim,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors:
-                              widget.darkMode
-                                  ? [
-                                    CupertinoColors.darkBackgroundGray,
-                                    CupertinoColors.black,
-                                  ]
-                                  : [
-                                    CupertinoColors.systemGrey6,
-                                    CupertinoColors.white,
-                                  ],
-                        ),
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                widget.darkMode
-                                    ? Colors.black.withOpacity(0.6)
-                                    : Colors.grey.withOpacity(0.3),
-                            blurRadius: widget.darkMode ? 20 : 10,
-                            spreadRadius: widget.darkMode ? 2 : 1,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                        border: Border.all(
-                          color:
-                              widget.darkMode
-                                  ? Colors.white.withOpacity(0.08)
-                                  : Colors.black.withOpacity(0.05),
-                          width: 1,
-                        ),
-                      ),
-
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: CupertinoTextField(
+                      controller: _urlController,
+                      placeholder: "Enter YouTube URL",
                       padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (_thumbnail != null)
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: SizedBox(
-                                width: double.infinity,
-                                height: 200,
-                                child: Image.network(
-                                  _thumbnail!,
-                                  fit: BoxFit.cover,
-                                  loadingBuilder: (
-                                    context,
-                                    child,
-                                    loadingProgress,
-                                  ) {
-                                    if (loadingProgress == null) return child;
-                                    return const Center(
-                                      child: CupertinoActivityIndicator(
-                                        radius: 15,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                          const SizedBox(height: 12),
-                          Text(
-                            "Title: $_title",
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          Text("Author: $_author"),
-                          Text("Duration: $_duration"),
-                          const SizedBox(height: 16),
-                          CupertinoButton.filled(
-                            onPressed: _loading ? null : _download,
-                            child:
-                                _loading
-                                    ? Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        const CupertinoActivityIndicator(
-                                          radius: 15,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Text(
-                                          "${(_progress * 100).toStringAsFixed(0)}%",
-                                        ),
-                                      ],
-                                    )
-                                    : const Text("Download MP3"),
-                          ),
-                        ],
-                      ),
+                      clearButtonMode: OverlayVisibilityMode.editing,
                     ),
                   ),
-                ),
-              const SizedBox(height: 24),
-              Text(
-                "Only MP3 downloads supported.\nDeveloped by Abdallah Driouich\nhttps://abdallah.driouich.site/",
-                style: TextStyle(
-                  fontSize: 12,
-                  color: CupertinoColors.systemGrey,
-                ),
-                textAlign: TextAlign.center,
+                  const SizedBox(width: 12),
+                  CupertinoButton.filled(
+                    onPressed: _fetching ? null : _fetchInfo,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 14,
+                    ),
+                    child:
+                        _fetching
+                            ? const CupertinoActivityIndicator()
+                            : const Icon(CupertinoIcons.down_arrow),
+                  ),
+                ],
               ),
-            ],
+            ),
+            Expanded(
+              child:
+                  _downloads.isEmpty
+                      ? const Center(
+                        child: Text("No downloads yet. Add a URL above."),
+                      )
+                      : ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _downloads.length,
+                        itemBuilder: (_, i) => _downloads[i],
+                      ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class DownloadCard extends StatefulWidget {
+  final String url;
+  final String title;
+  final String author;
+  final String duration;
+  final String thumbnail;
+  final bool darkMode;
+
+  const DownloadCard({
+    super.key,
+    required this.url,
+    required this.title,
+    required this.author,
+    required this.duration,
+    required this.thumbnail,
+    required this.darkMode,
+  });
+
+  @override
+  State<DownloadCard> createState() => _DownloadCardState();
+}
+
+class _DownloadCardState extends State<DownloadCard> {
+  bool _downloading = false;
+  double _progress = 0.0;
+
+  String _sanitizeFilename(String name) {
+    return name.replaceAll(RegExp(r'[\\/:*?"<>|$]'), '_');
+  }
+
+  Future<void> _download() async {
+    if (_downloading) return;
+
+    setState(() {
+      _downloading = true;
+      _progress = 0;
+    });
+
+    BotToast.showSimpleNotification(
+      title: "Download started",
+      subTitle: widget.title,
+      backgroundColor: CupertinoColors.activeBlue,
+      duration: const Duration(seconds: 3),
+    );
+
+    try {
+      final downloadsPath = '/storage/emulated/0/Download';
+      final safeTitle = _sanitizeFilename("${widget.title}.mp3");
+      final fullPath = '$downloadsPath/$safeTitle';
+
+      await downloadYoutubeAudio(
+        widget.url,
+        fullPath,
+        onProgress: (percent) {
+          setState(() => _progress = percent);
+        },
+      );
+
+      setState(() {
+        _progress = 1.0;
+        _downloading = false;
+      });
+
+      BotToast.showSimpleNotification(
+        title: "Download completed",
+        subTitle: safeTitle,
+        backgroundColor: CupertinoColors.activeGreen,
+        duration: const Duration(seconds: 3),
+      );
+    } catch (e) {
+      setState(() => _downloading = false);
+      BotToast.showSimpleNotification(
+        title: "Download failed",
+        subTitle: e.toString(),
+        backgroundColor: CupertinoColors.destructiveRed,
+        duration: const Duration(seconds: 3),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors:
+              widget.darkMode
+                  ? [CupertinoColors.darkBackgroundGray, CupertinoColors.black]
+                  : [CupertinoColors.systemGrey6, CupertinoColors.white],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color:
+                widget.darkMode
+                    ? Colors.black.withOpacity(0.6)
+                    : Colors.grey.withOpacity(0.3),
+            blurRadius: widget.darkMode ? 20 : 10,
+            spreadRadius: widget.darkMode ? 2 : 1,
+            offset: const Offset(0, 8),
           ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                widget.thumbnail,
+                height: 200,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return const Center(
+                    child: CupertinoActivityIndicator(radius: 15),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              "Title: ${widget.title}",
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text("Author: ${widget.author}"),
+            Text("Duration: ${widget.duration}"),
+            const SizedBox(height: 10),
+            CupertinoButton.filled(
+              onPressed: _downloading ? null : _download,
+              child:
+                  _downloading
+                      ? Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const CupertinoActivityIndicator(radius: 15),
+                          const SizedBox(width: 12),
+                          Text("${(_progress * 100).toStringAsFixed(0)}%"),
+                        ],
+                      )
+                      : const Text("Download MP3"),
+            ),
+          ],
         ),
       ),
     );

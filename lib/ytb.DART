@@ -22,7 +22,12 @@ class VideoInfoData {
 }
 
 /// Downloads the highest-quality audio from a YouTube URL to [outputPath]
-Future<void> downloadYoutubeAudio(String videoUrl, String outputPath) async {
+/// Calls onProgress with a value between 0.0 and 1.0.
+Future<void> downloadYoutubeAudio(
+  String videoUrl,
+  String outputPath, {
+  required void Function(double percent) onProgress,
+}) async {
   final yt = YoutubeExplode();
 
   try {
@@ -38,18 +43,47 @@ Future<void> downloadYoutubeAudio(String videoUrl, String outputPath) async {
     );
 
     final audio = manifest.audioOnly.withHighestBitrate();
+    if (audio == null) {
+      throw Exception('No audio stream found for this video.');
+    }
+
+    // Ensure folder exists and open file for writing bytes
     final file = File(outputPath);
     await file.create(recursive: true);
     final fileStream = file.openWrite();
 
+    // Get the stream of bytes
     final stream = yt.videos.streams.get(audio);
-    await stream.pipe(fileStream);
+
+    // Total size may be unknown; guard against null
+    final totalBytes = audio.size.totalBytes ?? 0;
+    int downloaded = 0;
+
+    // If total size is 0 (unknown), we still write but report progress as best-effort
+    await for (final chunk in stream) {
+      fileStream.add(chunk);
+      downloaded += chunk.length;
+      if (totalBytes > 0) {
+        final progress = downloaded / totalBytes;
+        onProgress(progress.clamp(0.0, 1.0));
+      } else {
+        // Emit a heuristic progress value that slowly increases but never reaches 1.0
+        // This avoids infinite 0% while giving UI feedback for unknown sizes.
+        final heuristic = (downloaded % 1000000) / 1000000;
+        onProgress(heuristic.clamp(0.0, 0.95));
+      }
+    }
+
     await fileStream.flush();
     await fileStream.close();
+
+    // Final callback to ensure UI hits 100%
+    onProgress(1.0);
 
     print('✅ Download complete: $outputPath');
   } catch (e) {
     print('❌ Error: $e');
+    rethrow;
   } finally {
     yt.close();
   }
