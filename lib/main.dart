@@ -1,19 +1,27 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:bot_toast/bot_toast.dart';
-import 'ytb.dart'; 
+import 'package:overlay_support/overlay_support.dart';
+import 'ytb.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(
-    CupertinoApp(
-      builder: BotToastInit(),
-      navigatorObservers: [BotToastNavigatorObserver()],
-      debugShowCheckedModeBanner: false,
-      home: const MyApp(),
-    ),
-  );
+  runApp(const MyAppRoot());
+}
+
+class MyAppRoot extends StatelessWidget {
+  const MyAppRoot({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // OverlaySupport must wrap CupertinoApp directly, not the other way around
+    return OverlaySupport.global(
+      child: const CupertinoApp(
+        debugShowCheckedModeBanner: false,
+        home: MyApp(),
+      ),
+    );
+  }
 }
 
 class MyApp extends StatefulWidget {
@@ -49,7 +57,6 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return CupertinoApp(
       debugShowCheckedModeBanner: false,
-      title: 'MP3 Downloader for YouTube',
       theme: CupertinoThemeData(
         brightness: _darkMode ? Brightness.dark : Brightness.light,
         primaryColor: CupertinoColors.activeBlue,
@@ -90,6 +97,31 @@ class _YtbDownloaderState extends State<YtbDownloader> {
   final List<DownloadCard> _downloads = [];
   bool _fetching = false;
 
+  void _showIOSBanner(String title, String subtitle, {bool isError = false}) {
+    showCupertinoDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return CupertinoAlertDialog(
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text(subtitle, textAlign: TextAlign.center),
+          ),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text("OK"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _fetchInfo() async {
     if (_urlController.text.trim().isEmpty) return;
     setState(() => _fetching = true);
@@ -102,24 +134,14 @@ class _YtbDownloaderState extends State<YtbDownloader> {
         duration: info.duration ?? "Unknown",
         thumbnail: info.thumbnail,
         darkMode: widget.darkMode,
+        showBanner: _showIOSBanner,
       );
       setState(() => _downloads.insert(0, card));
 
-      BotToast.showSimpleNotification(
-        title: "Download ready",
-        subTitle: info.title,
-        backgroundColor: CupertinoColors.activeGreen,
-        duration: const Duration(seconds: 3),
-      );
-
+      _showIOSBanner("Download ready", info.title);
       _urlController.clear();
     } catch (e) {
-      BotToast.showSimpleNotification(
-        title: "Error fetching info",
-        subTitle: e.toString(),
-        backgroundColor: CupertinoColors.destructiveRed,
-        duration: const Duration(seconds: 3),
-      );
+      _showIOSBanner("Error fetching info", e.toString(), isError: true);
     } finally {
       setState(() => _fetching = false);
     }
@@ -164,7 +186,7 @@ class _YtbDownloaderState extends State<YtbDownloader> {
                     child:
                         _fetching
                             ? const CupertinoActivityIndicator()
-                            : const Icon(CupertinoIcons.down_arrow),
+                            : const Icon(CupertinoIcons.arrow_down_circle),
                   ),
                 ],
               ),
@@ -195,6 +217,7 @@ class DownloadCard extends StatefulWidget {
   final String duration;
   final String thumbnail;
   final bool darkMode;
+  final void Function(String, String, {bool isError}) showBanner;
 
   const DownloadCard({
     super.key,
@@ -204,6 +227,7 @@ class DownloadCard extends StatefulWidget {
     required this.duration,
     required this.thumbnail,
     required this.darkMode,
+    required this.showBanner,
   });
 
   @override
@@ -226,12 +250,7 @@ class _DownloadCardState extends State<DownloadCard> {
       _progress = 0;
     });
 
-    BotToast.showSimpleNotification(
-      title: "Download started",
-      subTitle: widget.title,
-      backgroundColor: CupertinoColors.activeBlue,
-      duration: const Duration(seconds: 3),
-    );
+    widget.showBanner("Download started", widget.title);
 
     try {
       final downloadsPath = '/storage/emulated/0/Download';
@@ -251,20 +270,10 @@ class _DownloadCardState extends State<DownloadCard> {
         _downloading = false;
       });
 
-      BotToast.showSimpleNotification(
-        title: "Download completed",
-        subTitle: safeTitle,
-        backgroundColor: CupertinoColors.activeGreen,
-        duration: const Duration(seconds: 3),
-      );
+      widget.showBanner("Download completed", safeTitle);
     } catch (e) {
       setState(() => _downloading = false);
-      BotToast.showSimpleNotification(
-        title: "Download failed",
-        subTitle: e.toString(),
-        backgroundColor: CupertinoColors.destructiveRed,
-        duration: const Duration(seconds: 3),
-      );
+      widget.showBanner("Download failed", e.toString(), isError: true);
     }
   }
 
@@ -273,22 +282,19 @@ class _DownloadCardState extends State<DownloadCard> {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors:
-              widget.darkMode
-                  ? [CupertinoColors.darkBackgroundGray, CupertinoColors.black]
-                  : [CupertinoColors.systemGrey6, CupertinoColors.white],
-        ),
+        color:
+            widget.darkMode
+                ? CupertinoColors.systemGrey6.darkColor
+                : CupertinoColors.systemGrey6,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
             color:
                 widget.darkMode
-                    ? Colors.black.withOpacity(0.6)
-                    : Colors.grey.withOpacity(0.3),
-            blurRadius: widget.darkMode ? 20 : 10,
-            spreadRadius: widget.darkMode ? 2 : 1,
-            offset: const Offset(0, 8),
+                    ? Colors.black.withOpacity(0.5)
+                    : Colors.grey.withOpacity(0.2),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
