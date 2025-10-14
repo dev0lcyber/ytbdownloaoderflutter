@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:overlay_support/overlay_support.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'ytb.dart';
 
 void main() {
@@ -155,12 +156,79 @@ class _YtbDownloaderState extends State<YtbDownloader> {
           "YouTube MP3 Downloader",
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
-        trailing: CupertinoSwitch(
-          value: widget.darkMode,
-          onChanged: widget.toggleDarkMode,
-          activeColor: CupertinoColors.activeBlue,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            GestureDetector(
+              onTap: () {
+                showCupertinoDialog(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return CupertinoAlertDialog(
+                      title: const Text(
+                        "Developer Info",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      content: Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Column(
+                          children: [
+                            const Text(
+                              "Developed by Abdallah Driouich",
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 4),
+                            GestureDetector(
+                              onTap: () async {
+                                final url = Uri.parse(
+                                  "https://abdallah.driouich.site/",
+                                );
+                                if (await canLaunchUrl(url)) {
+                                  await launchUrl(
+                                    url,
+                                    mode: LaunchMode.externalApplication,
+                                  );
+                                }
+                              },
+                              child: const Text(
+                                "https://abdallah.driouich.site",
+                                style: TextStyle(
+                                  color: CupertinoColors.activeBlue,
+                                  fontSize: 14,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        CupertinoDialogAction(
+                          isDefaultAction: true,
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text("Close"),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+              child: const Icon(
+                CupertinoIcons.info_circle,
+                size: 26,
+                color: CupertinoColors.activeBlue,
+              ),
+            ),
+            const SizedBox(width: 12),
+            CupertinoSwitch(
+              value: widget.darkMode,
+              onChanged: widget.toggleDarkMode,
+              activeColor: CupertinoColors.activeBlue,
+            ),
+          ],
         ),
       ),
+
       child: SafeArea(
         child: Column(
           children: [
