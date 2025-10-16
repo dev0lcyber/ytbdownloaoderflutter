@@ -10,7 +10,7 @@ String sanitizeFilename(String input) {
 class VideoInfoData {
   final String title;
   final String author;
-  final String? duration;
+  final duration;
   final String thumbnail;
 
   VideoInfoData({
@@ -32,14 +32,10 @@ Future<void> downloadYoutubeAudio(
 
   try {
     final video = await yt.videos.get(videoUrl);
-    print('Downloading: ${video.title}');
 
     final manifest = await yt.videos.streams.getManifest(
       videoUrl,
-      ytClients: [
-        YoutubeApiClient.ios,
-        YoutubeApiClient.androidVr,
-      ],
+      ytClients: [YoutubeApiClient.ios, YoutubeApiClient.androidVr],
     );
 
     final audio = manifest.audioOnly.withHighestBitrate();
@@ -79,10 +75,7 @@ Future<void> downloadYoutubeAudio(
 
     // Final callback to ensure UI hits 100%
     onProgress(1.0);
-
-    print('✅ Download complete: $outputPath');
   } catch (e) {
-    print('❌ Error: $e');
     rethrow;
   } finally {
     yt.close();
@@ -97,7 +90,7 @@ Future<VideoInfoData> fetchVideoInfo(String videoUrl) async {
     return VideoInfoData(
       title: video.title,
       author: video.author,
-      duration: video.duration?.toString(),
+      duration: video.duration,
       thumbnail: video.thumbnails.standardResUrl,
     );
   } finally {
